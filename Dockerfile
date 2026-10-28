@@ -10,19 +10,25 @@ ARG VIAREWIND_URL=https://hangar.papermc.io/api/v1/projects/ViaRewind/versions/l
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /opt/minecraft /opt/downloads /data/plugins
 
-# Resolve a concrete Paper build through PaperMC's public API.
+# PaperMC retired its v2 API. Resolve the current v3 download URL and verify its checksum.
 RUN set -eux; \
+    UA='GLAZESMPSERVER/1.0 (https://github.com/LHSMC/GLAZESMPSERVER)'; \
     if [ "$PAPER_BUILD" = "latest" ]; then \
-      BUILD="$(curl -fsSL "https://api.papermc.io/v2/projects/paper/versions/$PAPER_VERSION" | jq -r '.builds[-1]')"; \
-    else BUILD="$PAPER_BUILD"; fi; \
-    test -n "$BUILD" && test "$BUILD" != "null"; \
-    curl -fsSL "https://api.papermc.io/v2/projects/paper/versions/$PAPER_VERSION/builds/$BUILD/downloads/paper-$PAPER_VERSION-$BUILD.jar" -o /opt/minecraft/paper.jar
+      META="$(curl -fsSL -H "User-Agent: $UA" -H 'Accept: application/json' "https://fill.papermc.io/v3/projects/paper/versions/$PAPER_VERSION/builds?channel=STABLE")"; \
+      URL="$(printf '%s' "$META" | jq -r 'first(.[] | select(.channel == "STABLE") | .downloads["server:default"].url) // empty')"; \
+      SHA="$(printf '%s' "$META" | jq -r 'first(.[] | select(.channel == "STABLE") | .downloads["server:default"].checksums.sha256) // empty')"; \
+    else \
+      META="$(curl -fsSL -H "User-Agent: $UA" -H 'Accept: application/json' "https://fill.papermc.io/v3/projects/paper/versions/$PAPER_VERSION/builds/$PAPER_BUILD")"; \
+      URL="$(printf '%s' "$META" | jq -r '.downloads["server:default"].url // empty')"; \
+      SHA="$(printf '%s' "$META" | jq -r '.downloads["server:default"].checksums.sha256 // empty')"; \
+    fi; \
+    test -n "$URL" && test -n "$SHA"; \
+    curl -fsSL -H "User-Agent: $UA" "$URL" -o /opt/minecraft/paper.jar; \
+    echo "$SHA  /opt/minecraft/paper.jar" | sha256sum -c -
 
-# EaglerXPaper enables Eaglercraft WebSocket connections on Paper's listener.
+# Download EaglerXPaper and its recommended protocol translation plugins.
 RUN set -eux; \
     curl -fL "$EAGLERXPAPER_URL" -o /opt/downloads/EaglerXPaper.jar; \
-    # The bridge release recommends the Via* translation plugins. If a project API changes,
-    # fail the image build rather than silently producing a misleading "working" image.
     for item in "ViaVersion:$VIAVERSION_URL" "ViaBackwards:$VIABACKWARDS_URL" "ViaRewind:$VIAREWIND_URL"; do \
       name="${item%%:*}"; url="${item#*:}"; \
       json="$(curl -fsSL "$url")"; \
@@ -33,10 +39,10 @@ RUN set -eux; \
       curl -fL "$download" -o "/opt/downloads/$name.jar"; \
     done
 
-COPY start.sh /usr/local/bin/start-server
-RUN chmod +x /usr/local/bin/start-server
+COPY container-entrypoint.sh /usr/local/bin/container-entrypoint
+RUN chmod +x /usr/local/bin/container-entrypoint
 
 WORKDIR /data
 EXPOSE 25565/tcp 25569/tcp
 ENV EULA=TRUE MEMORY=3G SERVER_PORT=25565
-ENTRYPOINT ["/usr/local/bin/start-server"]
+ENTRYPOINT ["/usr/local/bin/container-entrypoint"]
