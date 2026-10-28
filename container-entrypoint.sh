@@ -26,8 +26,8 @@ fi
 set_property() {
   key="$1"
   value="$2"
-  if grep -q "^\${key}=" server.properties; then
-    sed -i "s|^\${key}=.*|\${key}=\${value}|" server.properties
+  if grep -q "^${key}=" server.properties; then
+    sed -i "s|^${key}=.*|${key}=${value}|" server.properties
   else
     printf '%s=%s\n' "$key" "$value" >> server.properties
   fi
