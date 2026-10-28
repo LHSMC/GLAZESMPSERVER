@@ -8,6 +8,9 @@ services:
         PAPER_BUILD: "latest"
     container_name: glazesmp-server
     restart: unless-stopped
+    # Bypass Docker's embedded DNS proxy, which times out in this Codespace.
+    dns:
+      - 168.63.129.16
     environment:
       EULA: "TRUE"
       MEMORY: "${MEMORY:-3G}"
