@@ -3,9 +3,6 @@ FROM eclipse-temurin:21-jre-jammy
 ARG PAPER_VERSION=1.21.1
 ARG PAPER_BUILD=latest
 ARG EAGLERXPAPER_URL=https://github.com/PlanetDogeCodes/EaglerXPaper/releases/download/v1.1.1-S2/EaglerXPaper-v1.1.1-Stable2.jar
-ARG VIAVERSION_URL=https://hangar.papermc.io/api/v1/projects/ViaVersion/versions/latest/PAPER
-ARG VIABACKWARDS_URL=https://hangar.papermc.io/api/v1/projects/ViaBackwards/versions/latest/PAPER
-ARG VIAREWIND_URL=https://hangar.papermc.io/api/v1/projects/ViaRewind/versions/latest/PAPER
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /opt/minecraft /opt/downloads /data/plugins
@@ -26,19 +23,18 @@ RUN set -eux; \
     curl -fsSL -H "User-Agent: $UA" "$URL" -o /opt/minecraft/paper.jar; \
     echo "$SHA  /opt/minecraft/paper.jar" | sha256sum -c -
 
-# Download EaglerXPaper and its recommended protocol translation plugins.
+# Download EaglerXPaper and the Via* plugins from Modrinth's public API.
 RUN set -eux; \
     curl -fL "$EAGLERXPAPER_URL" -o /opt/downloads/EaglerXPaper.jar; \
-    for item in "ViaVersion:$VIAVERSION_URL" "ViaBackwards:$VIABACKWARDS_URL" "ViaRewind:$VIAREWIND_URL"; do \
-      name="${item%%:*}"; url="${item#*:}"; \
-      json="$(curl -fsSL "$url")"; \
-      download="$(printf '%s' "$json" | jq -r '.. | objects | select(has("downloadUrl")) | .downloadUrl' | head -n1)"; \
+    UA='GLAZESMPSERVER/1.0 (https://github.com/LHSMC/GLAZESMPSERVER)'; \
+    for slug in viaversion viabackwards viarewind; do \
+      json="$(curl -fsSL -H "User-Agent: $UA" "https://api.modrinth.com/v2/project/$slug/version?loaders=%5B%22paper%22%5D&featured=true")"; \
+      download="$(printf '%s' "$json" | jq -r '[.[] | select(.loaders | index("paper")) | .files[] | select(.primary == true) | .url][0] // empty')"; \
       if [ -z "$download" ] || [ "$download" = "null" ]; then \
-        echo "Could not resolve download URL for $name from Hangar API" >&2; exit 1; \
+        echo "Could not resolve a Paper plugin download for $slug from Modrinth" >&2; exit 1; \
       fi; \
-      curl -fL "$download" -o "/opt/downloads/$name.jar"; \
+      curl -fL -H "User-Agent: $UA" "$download" -o "/opt/downloads/$slug.jar"; \
     done
-
 COPY container-entrypoint.sh /usr/local/bin/container-entrypoint
 RUN chmod +x /usr/local/bin/container-entrypoint
 
